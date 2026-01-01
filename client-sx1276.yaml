@@ -1,0 +1,68 @@
+esphome:
+  name: client-lora-sx1276
+  libraries:
+    - "jgromes/RadioLib@^6.6.0"
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+logger:
+
+ota:
+  - platform: web_server
+
+substitutions:
+  device_name: client
+
+# Standard on a ESP32+LoRa Device (with OLED display)
+spi:
+  clk_pin: GPIO05
+  mosi_pin: GPIO27
+  miso_pin: GPIO19
+
+# import the components
+external_components:
+  - source:
+      type: local
+      path: ./ESPHomeLoRa/esphome/components
+    components: [lora_mqtt, lora_mqtt_bridge]
+
+# Standard on a ESP32+LoRa Device (with OLED display)
+lora_mqtt:
+  cs_pin: GPIO18            # chip-select pin (or NSS) for LoRa radio, defaults to 18
+  reset_pin: GPIO14         # reset pin for LoRa radio, defaults to 14
+  dio_pin: GPIO26           # DIO0 pin for LoRa radio, defaults to 26
+  frequency: 868000000      # frequency to use, defaults to 915 MHz
+
+sensor:
+  - platform: uptime
+    type: seconds
+    name: Uptime Sensor
+
+font:
+  - file: "gfonts://Roboto"
+    id: font1
+    size: 15
+
+display:
+  - platform: ssd1306_i2c
+    model: "SSD1306 128x64"
+    reset_pin: GPIO16
+    address: 0x3C
+    i2c_id: bus_b
+    lambda: |-
+      it.print(0, 0, id(font1), "Client");
+
+wifi:
+  ap:
+    ssid: "client-lora"
+    password: "SuperSecret"
+
+web_server:
+  port: 80
+  version: 3
+  auth:
+    username: admin
+    password: "SuperSecret"

@@ -1,0 +1,63 @@
+esphome:
+  name: bridge-lora-sx1276
+  libraries:
+    - "jgromes/RadioLib@^6.6.0"
+
+esp32:
+  board: esp32dev
+  variant: esp32
+  framework:
+    type: arduino
+
+logger:
+
+ota:
+  - platform: esphome
+  - platform: web_server
+
+web_server:
+  port: 80
+  version: 3
+
+# import the components
+external_components:
+  - source:
+      type: local
+      path: ./ESPHomeLoRa/esphome/components
+    components: [lora_mqtt, lora_mqtt_bridge]
+
+spi:
+  clk_pin: GPIO05
+  mosi_pin: GPIO32
+  miso_pin: GPIO33
+
+lora_mqtt_bridge:
+  cs_pin: GPIO17            # chip-select pin (or NSS) for LoRa radio, defaults to 18
+  reset_pin: GPIO14         # reset pin for LoRa radio, defaults to 14
+  dio_pin: GPIO15           # DIO0 pin for LoRa radio, defaults to 26
+  frequency: 868000000      # frequency to use, defaults to 915 MHz
+  # the options below are very dependent on your particular board and chip
+  # not all combinations work
+  # sync: 0xF3              # sets the sync word, defaults to 0x12
+  # coding: 5               # sets the coding rate, defaults to 5
+  # bandwidth: 250000       # sets the bandwidth, defaults to 125,000
+  # spread: 12              # sets the spread, defaults to 7
+
+mqtt:
+  id: mqtt_broker
+  broker: mosquitto.example.net
+  username: homeassistant
+  password: SuperSecret
+
+# Depending on the board select either Ethernet or WiFi
+ethernet:
+  type: LAN8720
+  mdc_pin: GPIO23
+  mdio_pin: GPIO18
+  clk_mode: GPIO0_IN
+  phy_addr: 1
+  power_pin: GPIO16
+
+#wifi:
+#  ssid: mywifi
+#  password: SuperSecret

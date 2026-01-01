@@ -1,0 +1,7 @@
+
+.esphome/*
+secrets.yaml
+*.pyc
+*.py
+*.py
+*.py

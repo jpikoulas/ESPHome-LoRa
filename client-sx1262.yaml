@@ -1,0 +1,66 @@
+# This is based on seeedstudio ESP32-S3 + WIO-1262 LoRa
+# It is very easy to modify this for any sx1262 board.
+
+esphome:
+  name: client-lora-sx1262
+  libraries:
+    - "jgromes/RadioLib@^6.6.0"
+  platformio_options:
+    build_flags: -DBOARD_HAS_PSRAM
+    board_build.arduino.memory_type: qio_opi
+    board_build.f_flash: 80000000L
+    board_build.flash_mode: qio 
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: arduino
+
+logger:
+
+ota:
+  - platform: web_server
+
+substitutions:
+  device_name: client
+
+# Defaults for xiao ESP32-S3 with B2B connector to WIO-SX1262
+spi:
+  clk_pin: GPIO07
+  mosi_pin: GPIO09
+  miso_pin: GPIO08
+
+# import the components
+external_components:
+  - source:
+      type: local
+      path: ./ESPHomeLoRa/esphome/components
+    components: [lora_mqtt, lora_mqtt_bridge]
+
+# Defaults for xiao ESP32-S3 with B2B connector to WIO-SX1262
+lora_mqtt:
+  chip_type: SX1262
+  cs_pin: GPIO41            # chip-select (or NSS) pin for LoRa radio
+  reset_pin: GPIO42         # reset pin for LoRa radio
+  dio_pin: GPIO39           # DIO0 pin for SX1276 or IRQ pin for SX1262
+  dio1_pin: GPIO40          # DIO1 pin ONLY for SX1262a (BUSY)
+  frequency: 868000000      # frequency to use
+
+sensor:
+  - platform: uptime
+    type: seconds
+    name: Uptime Sensor
+
+# For firmware updates as LoRa is not a good fit
+wifi:
+  ap:
+    ssid: "client-LoRa"
+    password: "SuperSecret"
+
+web_server:
+  port: 80
+  version: 3
+  auth:
+    username: admin
+    password: "SuperSecret"
+
