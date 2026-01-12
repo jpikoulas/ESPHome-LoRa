@@ -9,15 +9,16 @@ esphome:
     board_build.flash_mode: qio
 
 esp32:
-  board: esp32-s3-devkitc-1
+  board: seeed_xiao_esp32s3
   framework:
     type: arduino
 
 logger:
-
+  level: debug
+  
 ota:
   - platform: esphome
-  - platform: web_server
+    password: !secret wifi_pw
 
 web_server:
   port: 80
@@ -50,11 +51,18 @@ lora_mqtt_bridge:
   # bandwidth: 250000       # sets the bandwidth, defaults to 125,000
   # spread: 12              # sets the spread, defaults to 7
 
+# -- MQTT --
 mqtt:
-  id: mqtt_broker
-  broker: mosquitto.example.net
-  username: homeassistant
-  password: SuperSecret
+  broker: !secret mqtt_ip
+  username: !secret mqtt_user
+  password: !secret mqtt_password
+  topic_prefix: "lora/lora-1262-bridge"
+
+# -- WIFI --
+wifi:
+  ssid: !secret wifi_ssid_spiti
+  password: !secret wifi_pw_spiti
+  fast_connect: True
 
 # Depending on the board select either Ethernet or WiFi
 #ethernet:
@@ -65,6 +73,3 @@ mqtt:
 #  phy_addr: 1
 #  power_pin: GPIO16
 
-wifi:
-  ssid: mywifi
-  password: SuperSecret

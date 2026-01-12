@@ -9,17 +9,41 @@
 #include <sstream>
 volatile bool esphome::lora_mqtt_bridge::Lora_MQTT_BridgeComponent::receivedLoRaP = false;
 volatile int esphome::lora_mqtt_bridge::Lora_MQTT_BridgeComponent::_packet_size = 0;
+
+// External debug counters from LoRa.cpp (declared in global namespace)
+extern volatile uint32_t g_lora_irq_count;
+extern volatile uint32_t g_lora_packet_count;
+extern volatile int g_lora_last_parse_result;
+
 namespace esphome
 {
     namespace lora_mqtt_bridge
     {
         static const char *const TAG = "lora_mqtt_bridge.sensor";
 
+        static uint32_t last_debug_time = 0;
+        static uint32_t last_irq_count = 0;
+
         void Lora_MQTT_BridgeComponent::loop()
         {
+            // Print debug status every 30 seconds
+            uint32_t now = millis();
+            if (now - last_debug_time >= 30000) {
+                last_debug_time = now;
+                ESP_LOGI(TAG, "LoRa status: IRQ count=%lu, packets=%lu, last_parse=%d, flag=%d",
+                         (unsigned long)g_lora_irq_count, (unsigned long)g_lora_packet_count,
+                         g_lora_last_parse_result, (int)receivedLoRaP);
+                if (g_lora_irq_count == last_irq_count) {
+                    ESP_LOGW(TAG, "No IRQs received in last 30s - check DIO1/IRQ wiring!");
+                }
+                last_irq_count = g_lora_irq_count;
+            }
+
             if (receivedLoRaP)
             {
                 receivedLoRaP = false;
+                ESP_LOGI(TAG, "*** LoRa packet received! Size: %d bytes ***", _packet_size);
+
                 char received_string[251];
                 char config_topic[] = "%s/sensor/%s/%s/config";
                 char sensor_topic[] = "%s/sensor/%s/state";
@@ -41,20 +65,24 @@ namespace esphome
                     received_string[i] = (char)LoRa.read();
                 }
 
-                // ESP_LOGI(TAG, "line str: %s", received_string);
+                ESP_LOGI(TAG, "Raw received data: '%s'", received_string);
+                ESP_LOGI(TAG, "RSSI: %d dBm", LoRa.packetRssi());
 
                 // tokenize the received string
                 char *tokens[13];
                 int argc;
                 this->split(tokens, &argc, received_string, ':', 1);
 
+                ESP_LOGI(TAG, "Parsed %d tokens (expecting 11)", argc);
+
                 // if we didn't get 11 elements, this wasn't a message from our sensors
                 if (argc != 11)
                 {
+                    ESP_LOGW(TAG, "Invalid packet format - expected 11 tokens, got %d. Ignoring.", argc);
                     return;
                 }
 
-                ESP_LOGI(TAG, "line rcv: %s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s", tokens[0], tokens[1], tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7], tokens[8], tokens[9], tokens[10]);
+                ESP_LOGI(TAG, "Valid packet: %s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s", tokens[0], tokens[1], tokens[2], tokens[3], tokens[4], tokens[5], tokens[6], tokens[7], tokens[8], tokens[9], tokens[10]);
 
                 // check for binary_sensor or sensor
                 message_type = tokens[2];
@@ -204,7 +232,7 @@ namespace esphome
 
         void Lora_MQTT_BridgeComponent::setup()
         {
-            ESP_LOGD(TAG, "Setting up LoRa MQTT Bridge...");
+            ESP_LOGI(TAG, "Setting up LoRa MQTT Bridge...");
             auto *cs_internal = (InternalGPIOPin *)_cs;
             int cs_pin = cs_internal->get_pin();
             auto *reset_internal = (InternalGPIOPin *)_reset;
@@ -219,33 +247,43 @@ namespace esphome
                 dio1_pin = dio1_internal->get_pin();
             }
 
+            ESP_LOGI(TAG, "LoRa pins: CS=%d, RST=%d, DIO0/IRQ=%d, DIO1/BUSY=%d", cs_pin, reset_pin, dio0_pin, dio1_pin);
+            ESP_LOGI(TAG, "LoRa config: chip_type=%d, freq=%ld, bw=%ld, sf=%ld, cr=%ld, sync=0x%02lX",
+                     _chip_type, _frequency, _bandwidth, _spread, _coding, _sync);
+
             // Set chip type before initialization
             LoRa.setChipType((LoRaChipType)_chip_type);
             LoRa.setPins(cs_pin, reset_pin, dio0_pin, dio1_pin);
             if (!LoRa.begin(_frequency))
             {
                 this->mark_failed();
-                ESP_LOGE(TAG, "Error initializing LoRa");
+                ESP_LOGE(TAG, "Error initializing LoRa - check wiring and pins!");
                 return;
             }
+            ESP_LOGI(TAG, "LoRa radio initialized successfully");
             LoRa.setSyncWord(_sync);
             LoRa.setCodingRate4(_coding);
             LoRa.setSpreadingFactor(_spread);
             LoRa.setSignalBandwidth(_bandwidth);
             LoRa.onReceive(Lora_MQTT_BridgeComponent::call_on_data_recv_callback);
             LoRa.receive();
+            ESP_LOGI(TAG, "LoRa MQTT Bridge ready - listening for packets");
         }
 
         void Lora_MQTT_BridgeComponent::receivecallback(int packetSize)
         {
             _packet_size = packetSize;
             receivedLoRaP = true;
+            // Note: Can't use ESP_LOG in ISR, but this sets the flag for loop() to process
         }
-        
+
         void Lora_MQTT_BridgeComponent::call_on_data_recv_callback(int packetSize)
         {
             Lora_MQTT_BridgeComponent().receivecallback(packetSize);
         }
+
+        // Static counter for periodic status
+        static uint32_t last_status_time = 0;
 
         void Lora_MQTT_BridgeComponent::split(char **argv, int *argc, char *string, const char delimiter, int allowempty)
         {

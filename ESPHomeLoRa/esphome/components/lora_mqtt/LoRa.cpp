@@ -56,6 +56,19 @@ int LoRaClass::begin(long frequency) {
       return 0;
     }
 
+    // Configure TCXO for Wio-SX1262 module (1.8V, 5ms startup delay)
+    // This is required for the Seeedstudio Wio-SX1262 module which uses an external TCXO
+    state = _sx1262->setTCXO(1.8);
+    if (state != RADIOLIB_ERR_NONE) {
+      // TCXO setup failed, but continue anyway - some modules may not need it
+    }
+
+    // Enable DIO2 as RF switch control (for antenna switching)
+    state = _sx1262->setDio2AsRfSwitch(true);
+    if (state != RADIOLIB_ERR_NONE) {
+      // RF switch setup failed, but continue anyway
+    }
+
     // Set default parameters
     _sx1262->setSpreadingFactor(7);
     _sx1262->setBandwidth(125.0);
@@ -150,26 +163,37 @@ int LoRaClass::parsePacket(int size) {
   _packetIndex = 0;
 
   int state;
+  size_t packetLen;
 
   if (_chipType == CHIP_SX1262 || _chipType == CHIP_SX1268) {
-    state = _sx1262->readData(_rxBuffer, RX_BUFFER_SIZE);
-    if (state > 0) {
-      _rxBufferLen = state;
+    // For RadioLib, getPacketLength() must be called BEFORE readData()
+    packetLen = _sx1262->getPacketLength();
+    if (packetLen == 0 || packetLen > RX_BUFFER_SIZE) {
+      return 0;
+    }
+    state = _sx1262->readData(_rxBuffer, packetLen);
+    if (state == RADIOLIB_ERR_NONE) {
+      _rxBufferLen = packetLen;
       _lastRssi = _sx1262->getRSSI();
       _lastSnr = _sx1262->getSNR();
       _lastFreqError = _sx1262->getFrequencyError();
     }
   } else {
-    state = _sx127x->readData(_rxBuffer, RX_BUFFER_SIZE);
-    if (state > 0) {
-      _rxBufferLen = state;
+    // For RadioLib, getPacketLength() must be called BEFORE readData()
+    packetLen = _sx127x->getPacketLength();
+    if (packetLen == 0 || packetLen > RX_BUFFER_SIZE) {
+      return 0;
+    }
+    state = _sx127x->readData(_rxBuffer, packetLen);
+    if (state == RADIOLIB_ERR_NONE) {
+      _rxBufferLen = packetLen;
       _lastRssi = _sx127x->getRSSI();
       _lastSnr = _sx127x->getSNR();
       _lastFreqError = _sx127x->getFrequencyError();
     }
   }
 
-  return (state > 0) ? _rxBufferLen : 0;
+  return _rxBufferLen;
 }
 
 int LoRaClass::packetRssi() {
@@ -236,41 +260,38 @@ void LoRaClass::flush() {
 void LoRaClass::onReceive(void(*callback)(int)) {
   _onReceive = callback;
 
-  if (callback && _dio0 != -1) {
-    pinMode(_dio0, INPUT);
-    attachInterrupt(digitalPinToInterrupt(_dio0), LoRaClass::onDio0Rise, RISING);
-  } else if (_dio0 != -1) {
-    detachInterrupt(digitalPinToInterrupt(_dio0));
+  if (callback) {
+    // Use setPacketReceivedAction - RadioLib's high-level API that handles all IRQ setup
+    if (_chipType == CHIP_SX1262 || _chipType == CHIP_SX1268) {
+      _sx1262->setPacketReceivedAction(LoRaClass::onDio0Rise);
+    } else {
+      _sx127x->setPacketReceivedAction(LoRaClass::onDio0Rise);
+    }
+  } else {
+    if (_chipType == CHIP_SX1262 || _chipType == CHIP_SX1268) {
+      _sx1262->clearPacketReceivedAction();
+    } else {
+      _sx127x->clearPacketReceivedAction();
+    }
   }
 }
 
 void LoRaClass::onCadDone(void(*callback)(boolean)) {
   _onCadDone = callback;
-
-  if (callback && _dio0 != -1) {
-    pinMode(_dio0, INPUT);
-    attachInterrupt(digitalPinToInterrupt(_dio0), LoRaClass::onDio0Rise, RISING);
-  } else if (_dio0 != -1) {
-    detachInterrupt(digitalPinToInterrupt(_dio0));
-  }
+  // CAD callbacks are handled through the same DIO interrupt as onReceive
 }
 
 void LoRaClass::onTxDone(void(*callback)()) {
   _onTxDone = callback;
-
-  if (callback && _dio0 != -1) {
-    pinMode(_dio0, INPUT);
-    attachInterrupt(digitalPinToInterrupt(_dio0), LoRaClass::onDio0Rise, RISING);
-  } else if (_dio0 != -1) {
-    detachInterrupt(digitalPinToInterrupt(_dio0));
-  }
+  // TX done callbacks are handled through the same DIO interrupt as onReceive
 }
 
 void LoRaClass::receive(int size) {
   if (!_initialized) return;
 
   if (_chipType == CHIP_SX1262 || _chipType == CHIP_SX1268) {
-    _sx1262->startReceive();
+    // For SX1262, we need to specify IRQ flags for interrupt-based receive
+    _sx1262->startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF, RADIOLIB_SX126X_IRQ_RX_DONE, RADIOLIB_SX126X_IRQ_RX_DONE);
   } else {
     _sx127x->startReceive();
   }
@@ -518,6 +539,15 @@ void LoRaClass::handleDio0Rise() {
 
   if (_onTxDone) {
     _onTxDone();
+  }
+
+  // Restart receive mode for continuous reception
+  if (_onReceive) {
+    if (_chipType == CHIP_SX1262 || _chipType == CHIP_SX1268) {
+      _sx1262->startReceive(RADIOLIB_SX126X_RX_TIMEOUT_INF, RADIOLIB_SX126X_IRQ_RX_DONE, RADIOLIB_SX126X_IRQ_RX_DONE);
+    } else {
+      _sx127x->startReceive();
+    }
   }
 }
 

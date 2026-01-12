@@ -12,11 +12,12 @@ esphome:
     board_build.flash_mode: qio 
 
 esp32:
-  board: esp32-s3-devkitc-1
+  board: seeed_xiao_esp32s3
   framework:
     type: arduino
 
 logger:
+  level: debug
 
 ota:
   - platform: web_server
@@ -52,15 +53,13 @@ sensor:
     name: Uptime Sensor
 
 # For firmware updates as LoRa is not a good fit
+# -- WIFI --
 wifi:
-  ap:
-    ssid: "client-LoRa"
-    password: "SuperSecret"
+  ssid: !secret wifi_ssid_spiti
+  password: !secret wifi_pw_spiti
+  fast_connect: True
 
 web_server:
   port: 80
   version: 3
-  auth:
-    username: admin
-    password: "SuperSecret"
 
